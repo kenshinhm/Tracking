@@ -1,10 +1,13 @@
-#include "webcam.h"
+#include "logitech_c920.h"
 
-Webcam::Webcam(){}
+C920::C920()
+{
+    number = -1;
+}
 
-Webcam::~Webcam(){}
+C920::~C920(){}
 
-bool Webcam::Initialize(int camera_number)
+bool C920::Initialize(int camera_number, int width, int height)
 {
     if(number != -1)
         return false;
@@ -13,15 +16,15 @@ bool Webcam::Initialize(int camera_number)
     if(camera.open(number) == false)
         return false;
     //Initilize Webcam with default property
-    camera.set(PROPERTY::WIDTH, 640);
-    camera.set(PROPERTY::HEIGHT, 480);
-    camera.set(PROPERTY::BRIGHT, 128);
-    camera.set(PROPERTY::CONTRAST, 128);
-    camera.set(PROPERTY::COLOR_INT, 128);
-    camera.set(PROPERTY::GAIN, 64);
-    camera.set(PROPERTY::EXPOSURE, -3);
-    camera.set(PROPERTY::WB, 4250);
-    camera.set(PROPERTY::FOCUS, 0);
+    camera.set(WIDTH, width);
+    camera.set(HEIGHT, height);
+    camera.set(BRIGHT, 128);
+    camera.set(CONTRAST, 128);
+    camera.set(COLOR_INT, 128);
+    camera.set(GAIN, 64);
+    camera.set(EXPOSURE, -3);
+    camera.set(WHITE_BALANCE, 4250);
+    camera.set(FOCUS, 0);
 
     cv::Mat dummy;
     Grab(dummy);
@@ -29,7 +32,7 @@ bool Webcam::Initialize(int camera_number)
     return true;
 }
 
-bool Webcam::Grab(cv::Mat &image)
+bool C920::Grab(cv::Mat &image)
 {
     if(camera.read(image) == false)
         return false;
@@ -37,16 +40,12 @@ bool Webcam::Grab(cv::Mat &image)
         return true;
 }
 
-void Webcam::GetProperty(PROPERTY property, double &value)
+double C920::GetProperty(PROPERTY property)
 {
-    if(number == -1)
-        return;
-    value = camera.get(property);
-
-    return;
+    return camera.get(property);
 }
 
-void Webcam::SetProperty(PROPERTY property, double value)
+void C920::SetProperty(PROPERTY property, double value)
 {
     if(number == -1)
         return;
