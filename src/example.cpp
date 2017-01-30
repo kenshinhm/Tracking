@@ -17,7 +17,7 @@ bool on_track = false;
 bool on_drag = false;
 bool on_debug = false;
 int max_scene;
-cv::Mat image, gray, prev_gray, flow;
+cv::Mat image, next_gray, prev_gray, display;
 STracking tracking;
 C920 camera;
 MODE mode;
@@ -55,7 +55,7 @@ void DestroyWindows()
     return;
 }
 
-void onMouse(int event, int x, int y, int flags, void*)
+void MouseEvent(int event, int x, int y, int flags, void*)
 {
     if(event == cv::EVENT_LBUTTONDOWN)
     {
@@ -117,7 +117,7 @@ void RunStream()
 {
     int scene = 1;
     cv::namedWindow("Tracking");
-    //cv::setMouseCallback("Tracking", MouseEvent);
+    cv::setMouseCallback("Tracking", MouseEvent);
 
     camera.Grab(image);
     cv::cvtColor(image, prev_gray, cv::COLOR_RGB2GRAY);
@@ -127,18 +127,16 @@ void RunStream()
         clock_t start = clock();
 
         camera.Grab(image);
-        cv::cvtColor(image, gray, cv::COLOR_RGB2GRAY);
+        cv::cvtColor(image, next_gray, cv::COLOR_RGB2GRAY);
 
         try
         {
             if(on_track)
             {
-                cv::Rect prev_roi = tracking.GetTrackingROI();
-                cv::Mat debug = image.clone();
-                //cv::Rect next_roi = tracking.FlowTracking(prev_gray, gray, display, prev_roi,
-                //                                          STracking::AUTOGRID, STracking::AFFINE,
-                //                                          1.0, true, debug);
-                //tracking.SetTrackingROI(next_roi);
+                display = image.clone();
+                cv::Rect next_roi = tracking.FlowTracking(prev_gray, next_gray, display, STracking::AUTOGRID,
+                                                          STracking::AFFINE, 1.0, true, debug);
+                tracking.SetTrackingROI(next_roi);
             }
         }
         catch(cv::Exception ex)
@@ -146,6 +144,7 @@ void RunStream()
             cout << ex.what() << endl;
         }
 
+        prev_gray = next_gray.clone();
         clock_t end = clock();
         ss << scene << ")" << (1000/(end-start+1)) << "fps";
         text = ss.str();
