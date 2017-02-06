@@ -9,7 +9,6 @@ void STracking::Initialize(int image_width, int image_height, int max_corners)
     cv::RNG rng(12345);
     for(int i = 0 ; i < max_corners ; i++)
         colors.push_back(cv::Scalar(rng.uniform(0,255), rng.uniform(0,255), rng.uniform(0,255)));
-
 }
 
 cv::Rect STracking::GetTrackingROI()
@@ -214,17 +213,17 @@ cv::Rect STracking::Rearrange(vector<cv::Point2d>& prev_matches, vector<cv::Poin
                 index_max = i;
             }
         }
-    }
 
-    if(index_max != -1)
-    {
-        vector< vector<cv::Point2d> > contours_poly;
-        cv::approxPolyDP(cv::Mat(contours[index_max]), contours_poly, 3, true);
-        cv::Rect bound = cv::boundingRect(cv::Mat(contours_poly));
-        bound = cv::Rect((bound.x-2)*step + prev_roi.x, (bound.y-2)*step + prev_roi.y,
-                         bound.width * step, bound.height * step);
-        ret = cv::Rect((prev_roi.x + bound.x)/2,(prev_roi.y + bound.y)/2,
-                       (prev_roi.width + bound.width)/2, (prev_roi.height + bound.height)/2);
+        if(index_max != -1)
+        {
+            vector< vector<cv::Point2d> > contours_poly;
+            cv::approxPolyDP(cv::Mat(contours[index_max]), contours_poly, 3, true);
+            cv::Rect bound = cv::boundingRect(cv::Mat(contours_poly));
+            bound = cv::Rect((bound.x-2)*step + prev_roi.x, (bound.y-2)*step + prev_roi.y,
+                             bound.width * step, bound.height * step);
+            ret = cv::Rect((prev_roi.x + bound.x)/2,(prev_roi.y + bound.y)/2,
+                           (prev_roi.width + bound.width)/2, (prev_roi.height + bound.height)/2);
+        }
     }
 
     return ret;
