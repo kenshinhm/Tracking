@@ -60,9 +60,9 @@ void STracking::Resize(cv::Rect& rect, double scale)
     return;
 }
 
-void STracking::Resize(vector<cv::Point2d>& points, double scale)
+void STracking::Resize(vector<cv::Point2f>& points, double scale)
 {
-    for(vector<cv::Point2d>::iterator it = points.begin() ; it != points.end() ; it++)
+    for(vector<cv::Point2f>::iterator it = points.begin() ; it != points.end() ; it++)
     {
         it->x *= scale;
         it->y *= scale;
@@ -106,15 +106,17 @@ cv::Rect STracking::FlowTracking(cv::Mat& prev_gray, cv::Mat& next_gray, cv::Mat
     this->Resize(prev_roi, (double)1/resize_scale);
     this->Resize(optical_roi, (double)1/resize_scale);
 
-    vector<cv::Point2d> prev_corners;
+    vector<cv::Point2f> prev_corners;
     this->GetCorners(prev_image(prev_roi), prev_corners, corner, 4);
 
     this->SetPointsGlobal(prev_corners, prev_roi);
     this->SetPointsLocal(prev_corners, optical_roi);
 
     //Optical Flow
-    vector<cv::Point2d> prev_matches, next_matches;
-    this->OpticalFlowPyLK(prev_image(optical_roi), next_image(optical_roi), prev_corners, prev_matches, next_matches);
+    vector<cv::Point2f> prev_estimate, next_estimate;
+    vector<cv::Point2f> prev_matches, next_matches;
+    this->OpticalFlowPyLK(prev_image(optical_roi), next_image(optical_roi), prev_corners,
+                          prev_estimate, next_estimate, prev_matches, next_matches);
 
     //Transform
     this->SetPointsGlobal(prev_matches, optical_roi);
@@ -145,13 +147,13 @@ cv::Rect STracking::FlowTracking(cv::Mat& prev_gray, cv::Mat& next_gray, cv::Mat
             double dw = (double)next_roi.width/prev_roi.width;
             double dh = (double)next_roi.height/prev_roi.height;
 
-            string s_resize, s_dxy, s_dwh; stringstream ss;
+            string s_resize, s_dxy, s_dwh; ostringstream ss;
             ss << "Resize: x" << resize_scale;
-            s_resize = ss.str(); ss.flush(); //ss.str("");
+            s_resize = ss.str(); ss.str("");
             ss << "dx: " << dx << "  " << "dy: " << dy;
-            s_dxy = ss.str(); ss.flush();
+            s_dxy = ss.str(); ss.str("");
             ss << "dwidth: " << dw << "  " << "dheight: " << dh;
-            s_dwh = ss.str(); ss.flush();
+            s_dwh = ss.str(); ss.str("");
 
             cv::putText(display, s_resize, cv::Point(0,10), CV_FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0,255,0));
             cv::putText(display, s_dxy, cv::Point(0,30), CV_FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0,255,0));
@@ -169,14 +171,13 @@ cv::Rect STracking::FlowTracking(cv::Mat& prev_gray, cv::Mat& next_gray, cv::Mat
     return next_roi;
 }
 
-cv::Rect STracking::Rearrange(vector<cv::Point2d>& prev_matches, vector<cv::Point2d>& next_matches, cv::Rect prev_roi, int step, double threshold)
-
+cv::Rect STracking::Rearrange(vector<cv::Point2f>& prev_matches, vector<cv::Point2f>& next_matches, cv::Rect prev_roi, int step, double threshold)
 {
     cv::Rect ret = prev_roi;
     int hmargin = (prev_roi.height % step == 0) ? 4 : 5;
     int wmargin = (prev_roi.width % step == 0) ? 4 : 5;
 
-    cv::Mat blackboard(prev_roi.height/step + hmargin, prev_roi.width/step + wmargin, CV_8UC1, cv::Scalar(0));
+    cv::Mat blackboard(prev_roi.height/step + hmargin, prev_roi.width/step + wmargin, CV_8U, cv::Scalar(0));
 
     for(int i = 0 ; i < prev_matches.size() ; i++)
     {
@@ -194,8 +195,8 @@ cv::Rect STracking::Rearrange(vector<cv::Point2d>& prev_matches, vector<cv::Poin
     cv::morphologyEx(blackboard, blackboard, cv::MORPH_OPEN, element);
 
     //cv::RNG rng(12345);
-    //vector<cv::vec4i> hierarchy;
-    vector< vector<cv::Point2d> > contours;
+    vector<vector<cv::Point> > contours;
+    //vector<Vec4i> hierarchy;
 
     cv::findContours(blackboard, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, cv::Point(0,0));
 
@@ -216,7 +217,7 @@ cv::Rect STracking::Rearrange(vector<cv::Point2d>& prev_matches, vector<cv::Poin
 
         if(index_max != -1)
         {
-            vector< vector<cv::Point2d> > contours_poly;
+            vector< vector<cv::Point> > contours_poly;
             cv::approxPolyDP(cv::Mat(contours[index_max]), contours_poly, 3, true);
             cv::Rect bound = cv::boundingRect(cv::Mat(contours_poly));
             bound = cv::Rect((bound.x-2)*step + prev_roi.x, (bound.y-2)*step + prev_roi.y,
@@ -229,19 +230,21 @@ cv::Rect STracking::Rearrange(vector<cv::Point2d>& prev_matches, vector<cv::Poin
     return ret;
 }
 
-void STracking::OpticalFlowPyLK(cv::Mat prev, cv::Mat next, vector<cv::Point2d> prev_corners,
-                     vector<cv::Point2d>& prev_matches, vector<cv::Point2d>& next_matches)
+void STracking::OpticalFlowPyLK(cv::Mat prev, cv::Mat next, vector<cv::Point2f> prev_corners,
+                                vector<cv::Point2f> prev_estimate, vector<cv::Point2f> next_estimate,
+                                vector<cv::Point2f>& prev_matches, vector<cv::Point2f>& next_matches)
 {
     vector<uchar> status_1, status_2;
-    vector<double> err_1, err_2;
+    vector<float> err_1, err_2;
     int max_level = 2;
     cv::Size window_size(21,21);
     cv::TermCriteria termcrit(cv::TermCriteria::COUNT|cv::TermCriteria::EPS,30,0.03);
-    vector<cv::Point2d> prev_estimate, next_estimate;
 
     cv::calcOpticalFlowPyrLK(prev, next, prev_corners, next_estimate, status_1, err_1, window_size, max_level, termcrit, 0, 0.0001);
     cv::calcOpticalFlowPyrLK(next, prev, next_estimate, prev_estimate, status_2, err_2, window_size, max_level, termcrit, 0, 0.0001);
 
+    prev_matches.clear();
+    next_matches.clear();
     for(int i = 0 ; i < prev_corners.size() ; i++)
     {
         double dist = abs(prev_corners[i].x - prev_estimate[i].x) + abs(prev_corners[i].y - prev_estimate[i].y);
@@ -255,7 +258,7 @@ void STracking::OpticalFlowPyLK(cv::Mat prev, cv::Mat next, vector<cv::Point2d> 
     return;
 }
 
-void STracking::GetCorners(cv::Mat image, vector<cv::Point2d>& ret, CORNER corner, int step)
+void STracking::GetCorners(cv::Mat image, vector<cv::Point2f>& ret, CORNER corner, int step)
 {
     ret.clear();
 
@@ -263,7 +266,7 @@ void STracking::GetCorners(cv::Mat image, vector<cv::Point2d>& ret, CORNER corne
     {
         for(int y = 0 ; y < image.size().height ; y += step)
             for(int x = 0 ; x < image.size().width ; x += step)
-                ret.push_back(cv::Point2d((double)x,(double)y));
+                ret.push_back(cv::Point2f((double)x,(double)y));
     }
     else if(corner == FAST)
     {
@@ -272,13 +275,13 @@ void STracking::GetCorners(cv::Mat image, vector<cv::Point2d>& ret, CORNER corne
 //        bool nonmaxsuppresion = true;
 //        cv::Fast(image, key_points, threshold, nonmaxsuppresion);
 //        for(vector<cv::KeyPoint>::iterator it = key_points.begin() ; it != key_points.end(); it++)
-//            ret.push_back(cv::Point2d((double)it->pt.x, (double)it->pt.y));
+//            ret.push_back(cv::Point2f((double)it->pt.x, (double)it->pt.y));
     }
 
     return;
 }
 
-cv::Rect STracking::Transform(vector<cv::Point2d>& prev_matches, vector<cv::Point2d>& next_matches, cv::Rect prev_roi, METHOD method)
+cv::Rect STracking::Transform(vector<cv::Point2f>& prev_matches, vector<cv::Point2f>& next_matches, cv::Rect prev_roi, METHOD method)
 {
     cv::Rect ret = prev_roi;
 
@@ -296,8 +299,8 @@ cv::Rect STracking::Transform(vector<cv::Point2d>& prev_matches, vector<cv::Poin
             return ret;
         }
 
-        vector<cv::Point2d> from;
-        vector<cv::Point2d> to;
+        vector<cv::Point2f> from;
+        vector<cv::Point2f> to;
         this->RectToPoints(prev_roi, from);
         cv::transform(from, to, H);
 
@@ -320,13 +323,13 @@ cv::Rect STracking::Transform(vector<cv::Point2d>& prev_matches, vector<cv::Poin
     return ret;
 }
 
-void STracking::RectToPoints(cv::Rect rect, vector<cv::Point2d>& points)
+void STracking::RectToPoints(cv::Rect rect, vector<cv::Point2f>& points)
 {
     points.clear();
-    points.push_back(cv::Point2d(rect.x, rect.y));
-    points.push_back(cv::Point2d(rect.x + rect.width, rect.y));
-    points.push_back(cv::Point2d(rect.x + rect.width, rect.y + rect.height));
-    points.push_back(cv::Point2d(rect.x, rect.y + rect.height));
+    points.push_back(cv::Point2f(rect.x, rect.y));
+    points.push_back(cv::Point2f(rect.x + rect.width, rect.y));
+    points.push_back(cv::Point2f(rect.x + rect.width, rect.y + rect.height));
+    points.push_back(cv::Point2f(rect.x, rect.y + rect.height));
 
     return;
 }
@@ -342,9 +345,9 @@ void STracking::RectToPoints(cv::Rect rect, vector<cv::Point>& points)
     return ;
 }
 
-void STracking::SetPointsGlobal(vector<cv::Point2d>& points, cv::Rect roi)
+void STracking::SetPointsGlobal(vector<cv::Point2f>& points, cv::Rect roi)
 {
-    for(vector<cv::Point2d>::iterator it = points.begin() ; it != points.end(); it++)
+    for(vector<cv::Point2f>::iterator it = points.begin() ; it != points.end(); it++)
     {
         it->x += roi.x;
         it->y += roi.y;
@@ -352,9 +355,9 @@ void STracking::SetPointsGlobal(vector<cv::Point2d>& points, cv::Rect roi)
     return;
 }
 
-void STracking::SetPointsLocal(vector<cv::Point2d>& points, cv::Rect roi)
+void STracking::SetPointsLocal(vector<cv::Point2f>& points, cv::Rect roi)
 {
-    for(vector<cv::Point2d>::iterator it = points.begin() ; it != points.end(); it++)
+    for(vector<cv::Point2f>::iterator it = points.begin() ; it != points.end(); it++)
     {
         it->x -= roi.x;
         it->y -= roi.y;
