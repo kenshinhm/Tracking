@@ -217,9 +217,9 @@ cv::Rect STracking::Rearrange(vector<cv::Point2f>& prev_matches, vector<cv::Poin
 
         if(index_max != -1)
         {
-            vector< vector<cv::Point> > contours_poly;
-            cv::approxPolyDP(cv::Mat(contours[index_max]), contours_poly, 3, true);
-            cv::Rect bound = cv::boundingRect(cv::Mat(contours_poly));
+            vector<vector<cv::Point> > contours_poly(contours.size());
+            cv::approxPolyDP(cv::Mat(contours[index_max]), contours_poly[index_max], 3, true);
+            cv::Rect bound = cv::boundingRect(cv::Mat(contours_poly[index_max]));
             bound = cv::Rect((bound.x-2)*step + prev_roi.x, (bound.y-2)*step + prev_roi.y,
                              bound.width * step, bound.height * step);
             ret = cv::Rect((prev_roi.x + bound.x)/2,(prev_roi.y + bound.y)/2,

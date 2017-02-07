@@ -7,6 +7,7 @@
 #include "string"
 #include "sstream"
 #include "iostream"
+#include "sys/time.h"
 
 using namespace std;
 
@@ -16,12 +17,13 @@ enum MODE {VIDEO, IMAGE, STREAM};
 
 bool on_track = false;
 bool on_drag = false;
+bool on_debug = false;
+struct timeval start_time, end_time;
 int max_scene;
 cv::Mat image, next_gray, prev_gray, display;
 STracking tracking;
 C920 camera;
 MODE mode;
-bool debug = false;
 int max_number;
 string name;
 string path;
@@ -40,16 +42,10 @@ int main(int argc, char* argv[])
     if(argc >= 1)
     {
         cout << "Debug Mode" << endl;
-        debug = true;
+        on_debug = true;
     }
 
-    SelectMode(debug);
-
-    if(mode == STREAM)
-    {
-        camera.Initialize(0);
-        tracking.Initialize(camera.GetProperty(C920::WIDTH), camera.GetProperty(C920::HEIGHT));
-    }
+    SelectMode(on_debug);
 
     if(mode == STREAM)
         RunStream();
@@ -100,6 +96,8 @@ void SelectMode(bool debug)
         mode = STREAM;
         path = "../video";
         name = "basketball.avi";
+        //type = "jpg"
+        //max_scene = 100;
     }
     else
     {
@@ -140,6 +138,9 @@ void SelectMode(bool debug)
 void RunStream()
 {
     int scene = 0;
+
+    camera.Initialize(0);
+    tracking.Initialize(camera.GetProperty(C920::WIDTH), camera.GetProperty(C920::HEIGHT));
     cv::namedWindow("Tracking");
     cv::setMouseCallback("Tracking", MouseEvent);
 
@@ -149,7 +150,7 @@ void RunStream()
     for(;;)
     {
         scene++;
-        clock_t start = clock();
+        gettimeofday(&start_time, NULL);
 
         camera.Grab(image);
         cv::cvtColor(image, next_gray, cv::COLOR_BGR2GRAY);
@@ -160,7 +161,7 @@ void RunStream()
             {
                 display = image.clone();
                 cv::Rect next_roi = tracking.FlowTracking(prev_gray, next_gray, display, STracking::AUTOGRID,
-                                                          STracking::AFFINE, 1.0, true, debug);
+                                                          STracking::AFFINE, 1.0, true, on_debug);
                 tracking.SetTrackingROI(next_roi);
             }
         }
@@ -170,15 +171,16 @@ void RunStream()
         }
 
         prev_gray = next_gray.clone();
-        clock_t end = clock();
+        gettimeofday(&end_time, NULL);
+        double elapsed_time = (end_time.tv_sec - start_time.tv_sec)*1000.0 + (end_time.tv_usec - start_time.tv_usec)/1000.0 + 0.5;
+        cout << "#" << scene << ": " << elapsed_time << "ms" << endl;
 
         ss.str("");
-        ss << scene << ")" << (1000/(end-start+1)) << "fps";
-
+        ss << scene << ")" << (1000/elapsed_time) << "fps";
         cv::putText(image, ss.str(), cv::Point(10,20), CV_FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0,255,0), 1);
         cv::rectangle(image, tracking.GetTrackingROI(), cv::Scalar(0,255,0), 2);
         cv::imshow("Tracking", image);
-        cout << "#" << scene << ": " << end-start+1 << "ms" << endl;
+
         if(cv::waitKey(10) >= 0)
             break;
     }
@@ -196,53 +198,47 @@ void RunImage()
     ss << path << "/" << name << "_" << scene << "." << type;
     image = cv::imread(ss.str());
     cv::cvtColor(image, prev_gray, cv::COLOR_BGR2GRAY);
+    tracking.Initialize(image.size().width, image.size().height);
 
     for(;;)
     {
+        gettimeofday(&start_time, NULL);
+
+        ss.str("");
+        ss << path << "/" << name << "_" << scene << "." << type;
+        image = cv::imread(ss.str());
+        cv::cvtColor(image, next_gray, cv::COLOR_BGR2GRAY);
+
         if(on_track)
         {
-            scene++;
-            clock_t start = clock();
-
             try
             {
-                ss.str("");
-                ss << path << "/" << name << "_" << scene << "." << type;
-                image = cv::imread(ss.str());
-
-                cv::cvtColor(image, next_gray, cv::COLOR_BGR2GRAY);
-
                 display = image.clone();
                 cv::Rect next_roi = tracking.FlowTracking(prev_gray, next_gray, display, STracking::AUTOGRID,
-                                                          STracking::AFFINE, 1.0, true, debug);
+                                                          STracking::AFFINE, 1.0, true, on_debug);
                 tracking.SetTrackingROI(next_roi);
+                prev_gray = next_gray.clone();
             }
             catch(cv::Exception ex)
             {
                 cout << ex.what() << endl;
             }
-
-            prev_gray = next_gray.clone();
-            clock_t end = clock();
-
-            ss.str("");
-            ss << scene << ")" << (1000/(end-start+1)) << "fps";
-            cv::putText(image, ss.str(), cv::Point(10,20), CV_FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0,255,0), 1);
-            cv::rectangle(image, tracking.GetTrackingROI(), cv::Scalar(0,255,0), 2);
-            cv::imshow("Tracking", image);
-            cout << "#" << scene << ": " << end-start+1 << "ms" << endl;
-            if(cv::waitKey(10) >= 0)
-                break;
-            if(scene >= max_number)
+            if(++scene > max_number)
             {
                 on_track = false;
                 scene = 0;
-                ss.str("");
-                ss << path << "/" << name << "_" << scene << "." << type;
-                image = cv::imread(ss.str());
-                cv::cvtColor(image, prev_gray, cv::COLOR_BGR2GRAY);
             }
         }
+        gettimeofday(&end_time, NULL);
+        double elapsed_time = (end_time.tv_sec - start_time.tv_sec)*1000.0 + (end_time.tv_usec - start_time.tv_usec)/1000.0 + 0.5;
+        cout << "#" << scene << ": " << elapsed_time << "ms" << endl;
+        ss.str("");
+        ss << scene << ")" << (1000/elapsed_time) << "fps";
+        cv::putText(image, ss.str(), cv::Point(10,20), CV_FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0,255,0), 1);
+        cv::rectangle(image, tracking.GetTrackingROI(), cv::Scalar(0,255,0), 2);
+        cv::imshow("Tracking", image);
+        if(cv::waitKey(10) >= 0)
+            break;
     }
 
     return;
@@ -271,11 +267,10 @@ void RunVideo()
 
     for(;;)
     {
+        gettimeofday(&start_time, NULL);
         if(on_track)
         {
             scene++;
-            clock_t start = clock();
-
             capture >> image;
             if(image.empty())
             {
@@ -290,36 +285,28 @@ void RunVideo()
                 continue;
             }
             cv::cvtColor(image, next_gray, cv::COLOR_BGR2GRAY);
-
             try
             {
                 display = image.clone();
                 cv::Rect next_roi = tracking.FlowTracking(prev_gray, next_gray, display, STracking::AUTOGRID,
-                                                          STracking::AFFINE, 1.0, true, debug);
+                                                          STracking::AFFINE, 1.0, true, on_debug);
                 tracking.SetTrackingROI(next_roi);
+                prev_gray = next_gray.clone();
             }
             catch(cv::Exception ex)
             {
                 cout << ex.what() << endl;
-            }
-
-            prev_gray = next_gray.clone();
-            clock_t end = clock();
-            cout << "#" << scene << ": " << end-start+1 << "ms" << endl;
-
-            ss.str("");
-            ss << scene << ")" << (1000/(end-start+1)) << "fps";
-
-            cv::putText(image, ss.str(), cv::Point(10,20), CV_FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0,255,0), 1);
-            cv::rectangle(image, tracking.GetTrackingROI(), cv::Scalar(0,255,0), 2);
-            cv::imshow("Tracking", image);
+            }            
         }
-        else
-        {
-            display = image.clone();
-            cv::rectangle(display, tracking.GetTrackingROI(), cv::Scalar(0,255,0), 2);
-            cv::imshow("Tracking", display);
-        }
+
+        gettimeofday(&end_time, NULL);
+        double elapsed_time = (end_time.tv_sec - start_time.tv_sec)*1000.0 + (end_time.tv_usec - start_time.tv_usec)/1000.0 + 0.5;
+        cout << "#" << scene << ": " << elapsed_time << "ms" << endl;
+        ss.str("");
+        ss << scene << ")" << (1000/elapsed_time) << "fps";
+        cv::putText(image, ss.str(), cv::Point(10,20), CV_FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0,255,0), 1);
+        cv::rectangle(image, tracking.GetTrackingROI(), cv::Scalar(0,255,0), 2);
+        cv::imshow("Tracking", image);
         if(cv::waitKey(10) >= 0)
             break;
     }
