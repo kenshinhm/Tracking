@@ -1,4 +1,4 @@
-#include "logitech_c920.h"
+#include "logitech_c920.hpp"
 
 C920::C920()
 {

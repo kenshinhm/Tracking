@@ -2,8 +2,8 @@
 
 #include "opencv2/opencv.hpp"
 #include "vector"
-#include "tracking.h"
-#include "logitech_c920.h"
+#include "module/tracking.hpp"
+#include "device/logitech_c920.hpp"
 #include "string"
 #include "sstream"
 #include "iostream"

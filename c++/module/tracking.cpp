@@ -1,4 +1,4 @@
-#include "tracking.h"
+#include "tracking.hpp"
 
 void STracking::Initialize(int image_width, int image_height, int max_corners)
 {
@@ -190,7 +190,7 @@ cv::Rect STracking::Rearrange(vector<cv::Point2f>& prev_matches, vector<cv::Poin
     }
     //cv::imwrite("blackboard_before.jpg, blackboard);
 
-    cv::Mat element(3, 3, CV_8U, cv::Scalar(0));
+    cv::Mat element(3, 3, CV_8U, cv::Scalar(1));
     cv::morphologyEx(blackboard, blackboard, cv::MORPH_CLOSE, element);
     cv::morphologyEx(blackboard, blackboard, cv::MORPH_OPEN, element);
 
